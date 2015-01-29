@@ -7,8 +7,6 @@ require 'date'
 
 ####validate dates in due_date and change due_date
 
-
-
 module Toodoo
   class User < ActiveRecord::Base
     validates :name,  presence: true
@@ -27,19 +25,24 @@ module Toodoo
 end
 
 class TooDooApp
-  attr_reader :user, :todos, :show_done
+  attr_reader :user, :todos
 
   def initialize
     @user = nil
     @todos = nil
-    @show_done = nil
+  end
+
+  def clear
+    `clear`
+    puts "\n\n\n"
   end
 
   def new_user
-    say("Creating a new user:")
+    clear
+    say "\nCreating a new user:"
     name = ask("Username?") { |q| q.validate = /\A\w+\Z/ }
     @user = Toodoo::User.create(:name => name)
-    say("We've created your account and logged you in. Thanks #{@user.name}!")
+    say "\nWe've created your account and logged you in. Thanks #{@user.name}!"
   end
 
   def login
@@ -50,8 +53,8 @@ class TooDooApp
         menu.choice(u.name, "Login as #{u.name}.") { @user = u }
       end
 
-      menu.choice("Just kidding, back to main menu!", :back) do
-        say "You got it!"
+      menu.choice("back to main menu!", :back) do
+        say "\nYou got it!"
         @user = nil
       end
     end
@@ -59,16 +62,16 @@ class TooDooApp
 
   def confirm_input(selected_name, option = "delete")
     choices = 'yn'
-    delete = ask("Are you *sure* you want to #{option} #{selected_name}?") do |q|
+    delete = ask("Are you *sure* you want to #{option} #{selected_name}? select 'y' or 'n'") do |q|
       q.validate =/\A[#{choices}]\Z/
       q.character = true
-      #q.confirm = true
+      q.responses[:not_valid] = "you must select 'y' or 'n'."
     end
     delete
   end
 
   def delete_user
-    delete = confirm_input("TooDoo", "stop using")
+    delete = confirm_input("user", "delete")
     if delete == 'y'
       @user.destroy
       @user = nil
@@ -78,49 +81,40 @@ class TooDooApp
   def new_todo_list
     list_title = ask("whats would you like to name this list?  ") { |q| q.validate = /[[:alpha:]]/ }
     Toodoo::List.create :user_id => @user.id, :title => list_title
-    say("we have created a new to do list called #{:title}")
+    say "\nwe have created a new to do list called #{:title}"
     @user.lists.find_each {|list| @todos = list if list.title == list_title}
-    # TODO: This should create a new todo list by getting input from the user.
-    # The user should not have to tell you their id.
-    # Create the todo list in the database and update the @todos variable.
   end
 
   def pick_todo_list
-    puts "Which list do you want to edit? "
+    say "\nWhich list do you want to edit? "
     choose do |menu|
       @user.lists.find_each do |list|
         menu.choice(list.title, "Which list do you want to edit?") {@todos = list}
       end 
-      # TODO: This should get get the todo lists for the logged in user (@user).
-      # Iterate over them and add a menu.choice line as seen under the login method's
-      # find_each call. The menu choice block should set @todos to the todo list.
-
-      menu.choice("Just kidding, back to the main menu!", :back) do
-        say "You got it!"
+      menu.choice("back to the main menu!", :back) do
+        say "\nYou got it!"
         @todos = nil
       end
     end
   end
 
   def delete_todo_list
+    say "\nWhich list do you want to delete?"
     choose do |menu|
       @user.lists.find_each do |list|
-        menu.choice(list.title, "Which list do you want to edit?") {@todos = list}
+        menu.choice(list.title, "pick a list to delete.") {@todos = list}
       end
-      delete = confirm_input(@todos.title)
-      #choices = 'yn'
-      #delete = ask("Are you *sure* you want to delete #{@todos.title}?") do |q|
-      #  q.validate =/\A[#{choices}]\Z/
-      #  q.character = true
-      #  q.confirm = true
-      #end
-      if delete == 'y'
-        @todos.destroy
+        menu.choice("back to the main menu!", :back) do
+        say "\nYou got it!"
         @todos = nil
       end
     end
-    # TODO: This should confirm that the user wants to delete the todo list.
-    # If they do, it should destroy the current todo list and set @todos to nil.
+    binding.pry
+    delete = confirm_input(@todos.title)
+    if delete == 'y'
+      @todos.destroy
+      @todos = nil
+    end
   end
 
   def new_task
@@ -136,34 +130,29 @@ class TooDooApp
     else
       item_details[:due_date] = nil
     end
-
     Toodoo::Item.create :list_id => @todos.id, :name => item_details[:name], :due_date => item_details[:due_date]
-    say("hey we successfully added a new task on #{@todos.title}")
-    # TODO: This should create a new task on the current user's todo list.
-    # It must take any necessary input from the user. A due date is optional.
+    say "\nhey we successfully added a new task on #{@todos.title}"
   end
 
   def find_item(edit_type)
-    puts "which task would you like to #{edit_type}?"
+    say "\nwhich task would you like to #{edit_type}?"
     choose do |menu|
-        @todos.items.each do |item|
-          menu.choice(item.name, "which item do you want to change?") {return item}
+      @todos.items.each do |item|
+        menu.choice(item.name, "choose an item to #{edit_type}") {return item}
+      end
+      menu.choice(:back, "back to the main menu!") do
+        say "\nYou got it!"
       end
     end
   end
 
-
-  ## NOTE: For the next 3 methods, make sure the change is saved to the database.
-  def mark_done
+  def mark_finished
     item = find_item("mark finished")
-    binding.pry
-    item.finished = true
-    item.save
-    # TODO: This should display the todos on the current list in a menu
-    # similarly to pick_todo_list. Once they select a todo, the menu choice block
-    # should update the todo to be completed.
+    if item != nil
+      item.finished = true
+      item.save
+    end
   end
-
 
   def change_due_date
     item = find_item("change the due date of")
@@ -176,49 +165,42 @@ class TooDooApp
     end
     item.due_date = new_date
     item.save
-    # TODO: This should display the todos on the current list in a menu
-    # similarly to pick_todo_list. Once they select a todo, the menu choice block
-    # should update the due date for the todo. You probably want to use
-    # `ask("foo", Date)` here.
   end
 
   def edit_task
     item = find_item("edit")
-    item_title = ask("what do you want to change the task name, #{item.name}, to?") { |q| q.validate = /[[:alnum:]]/ }
-    item.name = item_title
-    item.save
-    # TODO: This should display the todos on the current list in a menu
-    # similarly to pick_todo_list. Once they select a todo, the menu choice block
-    # should change the name of the todo.
+    if item != nil
+      item_title = ask("what do you want to change the task name, #{item.name}, to?") { |q| q.validate = /[[:alnum:]]/ }
+      item.name = item_title
+      item.save
+    end
   end
 
   def show_overdue
-    choose do |menu|
-      menu.prompt = "would you like to work on open tasks?"
-      @todos.items.where('items.due_date NOT NULL').where(finished: false).
-      where('items.due_date > ?', DateTime.now).order(due_date: :asc).each do |item|
-        menu.choice("#{item.due_date} -- #{item.name}", :edit_task) { edit_task }
-      end
-      menu.choice("Just kidding, back to main menu!", :back)
+    say "\nhere are the tasks that are overdue."
+    @todos.items.where("finished = :finished AND due_date < :date AND due_date NOT NULL", 
+    finished: false, date: DateTime.now).order(:due_date).reverse.each do |item|
+      puts "due date: #{item.due_date.strftime("%Y-%m-%d")} -- item name: #{item.name}"
     end
-
-    # TODO: This should print a sorted list of todos with a due date *older*
-    # than `Date.now`. They should be formatted as follows:
-    # "Date -- Eat a Cookie"
-    # "Older Date -- Play with Puppies"
+    ask("\n1. back to main menu!\n", :back) {}
   end
 
   def show_done
-    #@todos.items.where(finished: true).each |item|
-    #puts "#{item.name}"
+    @todos.items.where(finished: true).order(:due_date).reverse.each do |item|
+      if item.due_date == nil
+        puts "due date: N/A -- item name: #{item.name}"
+      else
+        puts "due date: #{item.due_date.strftime("%Y-%m-%d")} -- item name: #{item.name}"
+      end
+    end
+    binding.pry
+    ask("\n1. back to main menu!\n", :back) {}
   end
 
   def run
     puts "Welcome to your personal TooDoo app."
     loop do
       choose do |menu|
-        #menu.layout = :menu_only
-        #menu.shell = true
 
         # Are we logged in yet?
         unless @user
@@ -237,13 +219,13 @@ class TooDooApp
         # Let's work on some todos!
         if @todos
           menu.choice("Add a new task.", :new_task) { new_task }
-          menu.choice("Mark a task finished.",:mark_done) { mark_done }
+          menu.choice("Mark a task finished.",:mark_finished) { mark_finished }
           menu.choice("Change a task's due date.", :move_date) { change_due_date }
           menu.choice("change a task's description.", :edit_task) { edit_task }
-          menu.choice("Toggle display of items you've finished.", :show_done) { @show_done = !!@show_done }
+          menu.choice("Toggle display of items you've finished.", :show_done) { show_done }
           menu.choice("Show a list of task's that are overdue, oldest first.", :show_overdue) { show_overdue }
           menu.choice("Go work on another Toodoo list!", :back) do
-            say "You got it!"
+            say "\nYou got it!"
             @todos = nil
           end
         end
